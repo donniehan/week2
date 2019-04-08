@@ -1,0 +1,113 @@
+# from factors_wangjp import test
+import re,factor_update,factor_show
+import numpy as np
+import pandas as pd
+import datetime
+
+
+def find_all_var():
+    from DataReaderModule.Constants import ALIAS_FIELDS
+    var_obj = ALIAS_FIELDS()
+    list_all_var = dir(var_obj)
+    list_all_var = list(set(list_all_var) - set(['DATE', 'STKCD', 'STKCNT', 'INDCODE']))
+    s = pd.Series(list_all_var)
+    s_rm = s.map(lambda x: 1 if x.startswith('__') else 0)
+    s = pd.concat([s, s_rm], axis=1)
+    s1 = s[s.iloc[:, 1] == 0]
+    list_all_var = list(s1.iloc[:, 0])
+    return list_all_var
+
+
+def changeParameter(num_loop):
+    # from original_operation_hdh.original import Factor  # 每次需要改py文件名，
+    # 比如把original_operation_hdh.original改成original_operation_hdh.original_1
+
+    list_all_var = find_all_var()  # 100+因子
+    list_var_loop = []
+    # factor_obj = Factor(1)
+    # factor_fields = factor_obj.needFields
+    factor_fields = ['HIGH', 'LOW', 'VWAP']
+    for i in range(num_loop):
+        while True:
+            num_list = np.random.randint(1, len(list_all_var), len(factor_fields))
+            if len(np.unique(num_list)) == len(num_list):
+                break
+        list_var = [list_all_var[x] for x in num_list]
+        list_var_loop.append(list_var)
+        print('The %d th variable list is:' % i, list_var)
+    df = pd.DataFrame(list_var_loop)
+    df = df.drop_duplicates()
+    # amount=[]
+    # financialIndex=[t.PE,t.PB,t.PS]
+    with open('original_operation_hdh\original.py','r',encoding='UTF-8') as f:
+        originalText = f.read()
+    time_now = str(datetime.datetime.now())[:19].replace('-','').replace(':',' ')
+    for i in range(len(df)):
+        s = df.iloc[i, :]
+        with open(r'factors_han/%s_hdh_%s.py' % (str(time_now)[:19], i), 'w', encoding='UTF-8') as f:
+            newText = originalText
+            for i_fields in range(len(factor_fields)):
+                newText = re.sub(r'%s' % factor_fields[i_fields], '%s' % s[i_fields], newText)
+            f.write(newText)
+            print('Done: Write ' + 'factors_han/%s_hdh_%s.py' % (str(time_now)[:19], i))
+
+    # for i in price:
+    #     with open('C:\\Users\\lixiao\\PycharmProjects\\Quant\\FactorPool\\factors_wangjp\\test%s.py' %i,'w',encoding='UTF-8') as f:
+    #         f.write(re.sub(r'CLOSE', '%s'%i, originalText))
+
+
+def shuabiaoUpdate():
+    #运行factor_update.py
+    import os
+    import time
+    from FactorModule.FactorUpdate import update_factors
+    factorDefPath = r'..\FactorPool\factors_han'  # 因子定义路径
+    factorDataPath = r'..\FactorPool\factors_han_data'  # 因子数据路径
+    factorRiskPath = r'..\FactorPool\risk_factors_data'  # 风险因子数据路径
+    if not os.path.exists(factorDataPath):
+        os.mkdir(factorDataPath)
+    allFcts = [fct.split('.')[0] for fct in os.listdir(factorDefPath) if fct not in ['__init__.py', '__pycache__']]
+    if allFcts:
+        print('All factors: ', allFcts)
+    newFcts = sorted(list(set(allFcts) - set(os.listdir(factorDataPath))))
+    if newFcts:
+        print('New factors : ', newFcts)
+    start = time.time()
+    failures = update_factors(factorList=newFcts,
+                              factorDefPath=factorDefPath,
+                              factorDataPath=factorDataPath,
+                              factorRiskPath=factorRiskPath,
+                              startOver=True,
+                              indexFactor=False,
+                              preDateNum=90)
+    print('Failed factors: ', failures)
+    print('update finished with {} seconds'.format(time.time() - start))
+    for failure in failures:
+        os.remove(factorDefPath + '\\' + failure + '.py')
+        print('Remove %s successfully because of the failure.' % failure+'.py')
+    return newFcts
+
+
+def shuabiaoShow(factorList = None):
+    #运行factor_show.py 生成刷表产生因子的report
+    from FactorModule.FactorShow import FactorShow
+    from DataReaderModule.Constants import ALIAS_RESPONSE as alr
+    from DataReaderModule.Constants import ALIAS_INDICATORS as ali
+    headDate = 20080101
+    tailDate = None
+    obj = FactorShow(fctDataPath=r'..\FactorPool\factors_han_data',
+                     fctRiskPath=r'..\FactorPool\risk_factors_data')
+    print('Show factors % s:' % str(factorList))
+    obj.factor_single_report(headDate=headDate,
+                             factorList=factorList,
+                             tailDate=20181228,
+                             newFigStats=True,
+                             showCurves=True,
+                             reportPath=r'..\FactorPool\factor_reports')
+
+
+if __name__=='__main__':
+    changeParameter(num_loop=10)                #产生因子文件
+    factorList = shuabiaoUpdate()        #运行factor_update.py
+    if len(factorList) != 0:             #运行factor_show.py 生成刷表产生因子的report
+        shuabiaoShow(factorList)
